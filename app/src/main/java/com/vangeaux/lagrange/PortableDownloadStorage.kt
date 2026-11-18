@@ -1300,7 +1300,7 @@ internal fun portableFileExtension(value: String?): String {
     val token = value.orEmpty().substringBefore(';').trim().lowercase()
     val supportedExtensions = setOf(
         "azw3", "azw", "mobi", "epub", "pdf", "m4b", "m4a", "mp3",
-        "ogg", "oga", "opus", "flac", "cbz", "cbr", "cb7"
+        "eac3", "ec3", "ac3", "ogg", "oga", "opus", "flac", "cbz", "cbr", "cb7"
     )
     if (token in supportedExtensions) return token
     val extension = token.substringAfterLast('/', token).substringAfterLast('.', "")
@@ -1315,6 +1315,8 @@ internal fun portableFileExtension(value: String?): String {
         "application/vnd.comicbook-rar", "application/x-cbr" -> "cbr"
         "audio/mpeg" -> "mp3"
         "audio/mp4", "audio/x-m4a" -> "m4a"
+        "audio/eac3", "audio/eac3-joc", "audio/x-eac3", "audio/ec3" -> "eac3"
+        "audio/ac3", "audio/x-ac3" -> "ac3"
         "audio/ogg" -> "ogg"
         "audio/opus" -> "opus"
         "audio/flac", "audio/x-flac" -> "flac"
@@ -1329,6 +1331,8 @@ private fun portableMimeType(extension: String): String = when (extension.lowerc
     "cbr" -> "application/vnd.comicbook-rar"
     "mp3" -> "audio/mpeg"
     "m4a", "m4b" -> "audio/mp4"
+    "eac3", "ec3" -> "audio/eac3"
+    "ac3" -> "audio/ac3"
     "ogg", "oga", "opus" -> "audio/ogg"
     "flac" -> "audio/flac"
     else -> "application/octet-stream"

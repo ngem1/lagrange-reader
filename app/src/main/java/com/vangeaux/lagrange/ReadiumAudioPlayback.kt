@@ -28,6 +28,7 @@ import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.datasource.DefaultDataSource
+import androidx.media3.exoplayer.DefaultRenderersFactory
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.session.CommandButton
@@ -121,30 +122,37 @@ internal val audiobookNextChapterSessionCommand = SessionCommand(
 private val readAlongPreviousSessionCommand = SessionCommand(READALONG_PREVIOUS_ACTION, Bundle())
 private val readAlongNextSessionCommand = SessionCommand(READALONG_NEXT_ACTION, Bundle())
 
-internal fun audiobookMedia3AudioAttributes(): AudioAttributes =
+internal fun audiobookMedia3AudioAttributes(isDolbyContent: Boolean = false): AudioAttributes =
     AudioAttributes.Builder()
         .setUsage(C.USAGE_MEDIA)
-        .setContentType(C.AUDIO_CONTENT_TYPE_SPEECH)
+        .setContentType(
+            if (isDolbyContent) C.AUDIO_CONTENT_TYPE_MUSIC else C.AUDIO_CONTENT_TYPE_SPEECH
+        )
         .build()
 
 internal fun configureAudiobookAudioFocus(
     setAudioAttributes: (AudioAttributes, Boolean) -> Unit,
-    pauseForAudioInterruptions: Boolean
+    pauseForAudioInterruptions: Boolean,
+    isDolbyContent: Boolean = false
 ) {
     setAudioAttributes(
-        audiobookMedia3AudioAttributes(),
+        audiobookMedia3AudioAttributes(isDolbyContent = isDolbyContent),
         pauseForAudioInterruptions
     )
 }
 
 internal fun applyAudiobookAudioFocusPolicy(
     player: Player,
-    pauseForAudioInterruptions: Boolean
+    pauseForAudioInterruptions: Boolean,
+    isDolbyContent: Boolean = false
 ) {
     (player as? ExoPlayer)?.let { exoPlayer ->
+        val effectiveDolby = isDolbyContent ||
+            resolvePlayerDolbyContentFormat(exoPlayer) != DolbyContentFormat.NONE
         configureAudiobookAudioFocus(
             setAudioAttributes = exoPlayer::setAudioAttributes,
-            pauseForAudioInterruptions = pauseForAudioInterruptions
+            pauseForAudioInterruptions = pauseForAudioInterruptions,
+            isDolbyContent = effectiveDolby
         )
     }
 }
@@ -603,7 +611,8 @@ internal data class AudiobookMediaItemSpec(
     val localPath: String? = null,
     val bookId: String = "",
     val libraryId: String = "",
-    val albumTitle: String? = null
+    val albumTitle: String? = null,
+    val dolbyContentFormat: DolbyContentFormat = DolbyContentFormat.NONE
 )
 
 internal data class PreparedAudiobookPlaylist(
@@ -620,17 +629,37 @@ internal fun prepareAudiobookPlaylist(files: List<BookFileOption>): PreparedAudi
         val streamUrl = file.book.streamUrl?.takeIf { it.isNotBlank() }
             ?: localPath
             ?: return@mapNotNull null
-        val mimeType = file.format?.let(::media3AudioMimeType) ?: return@mapNotNull null
+        val mimeType = file.format?.let(::media3AudioMimeType)
+            ?: file.filename?.let(::media3AudioMimeType)
+            ?: return@mapNotNull null
+        val dolbyFormat = detectDolbyContentFormat(
+            mimeType,
+            file.format,
+            file.filename,
+            localPath,
+            streamUrl,
+            file.book.format,
+            file.book.filename
+        )
+        val effectiveMimeType = if (
+            mimeType == MimeTypes.AUDIO_E_AC3 &&
+            dolbyFormat == DolbyContentFormat.DOLBY_ATMOS
+        ) {
+            MimeTypes.AUDIO_E_AC3_JOC
+        } else {
+            mimeType
+        }
         file to AudiobookMediaItemSpec(
             fileId = fileId,
             streamUrl = streamUrl,
-            mimeType = mimeType,
+            mimeType = effectiveMimeType,
             title = file.filename ?: file.book.title,
             artist = file.book.author,
             localPath = localPath,
             bookId = file.book.id,
             libraryId = file.book.libraryId,
-            albumTitle = file.book.seriesName ?: file.book.title
+            albumTitle = file.book.seriesName ?: file.book.title,
+            dolbyContentFormat = dolbyFormat
         )
     }
     return PreparedAudiobookPlaylist(
@@ -655,6 +684,12 @@ internal fun buildAudiobookMediaItems(
             metadataBuilder.setArtworkUri(
                 androidAutoCoverUri(packageName, spec.bookId, spec.libraryId)
             )
+        }
+        if (spec.dolbyContentFormat != DolbyContentFormat.NONE) {
+            val extras = Bundle()
+            applyDolbyBrowseIndicatorExtras(extras, packageName, spec.dolbyContentFormat)
+            applyDolbyPlaybackMetadataExtras(extras, packageName, spec.dolbyContentFormat)
+            metadataBuilder.setExtras(extras)
         }
         MediaItem.Builder()
             .setMediaId(spec.fileId)
@@ -722,8 +757,12 @@ internal fun resolveInitialAudiobookMediaItemIndex(
 
 internal fun shouldUseSingleFileAudioEngine(
     localFileAvailable: Boolean,
-    audiobookFileCount: Int
-): Boolean = localFileAvailable && audiobookFileCount < 2
+    audiobookFileCount: Int,
+    formatOrFilename: String? = null
+): Boolean =
+    localFileAvailable &&
+        audiobookFileCount < 2 &&
+        detectDolbyContentFormat(formatOrFilename) == DolbyContentFormat.NONE
 
 internal fun shouldUsePlaylistMedia3Audio(preparedAudioFileCount: Int): Boolean =
     preparedAudioFileCount > 0
@@ -777,21 +816,26 @@ internal suspend fun openDirectMedia3Audio(
 ): ReadiumAudioOpenResult {
     val playlistItems = buildAudiobookMediaItems(audioFiles, application.packageName)
     if (shouldUsePlaylistMedia3Audio(playlistItems.size)) {
+        val isDolby = resolveBookDolbyContentFormat(book, audioFiles) != DolbyContentFormat.NONE
         return preparePlaylistMedia3Audio(
             application = application,
             mediaItems = playlistItems,
             initialFileId = book.fileId,
             initialPositionMs = initialPositionMs,
             pauseForAudioInterruptions = pauseForAudioInterruptions,
+            isDolbyContent = isDolby,
             headersProvider = headersProvider,
             recoverAuthentication = recoverAuthentication
         )
     }
     val url = streamUrl?.takeIf { it.isNotBlank() }
+        ?: book.localPath?.takeIf { it.isNotBlank() }
         ?: return ReadiumAudioOpenResult.Error(
             application.getString(R.string.notif_audiobook_no_local_file)
         )
     val mimeType = book.format?.let(::media3AudioMimeType)
+        ?: book.filename?.let(::media3AudioMimeType)
+        ?: url.let(::media3AudioMimeType)
         ?: return ReadiumAudioOpenResult.Error(
             application.getString(R.string.notif_audiobook_format_unsupported)
         )
@@ -814,11 +858,16 @@ private suspend fun preparePlaylistMedia3Audio(
     initialFileId: String?,
     initialPositionMs: Long,
     pauseForAudioInterruptions: Boolean,
+    isDolbyContent: Boolean = false,
     headersProvider: suspend (AbsoluteUrl) -> Map<String, String>,
     recoverAuthentication: suspend () -> Boolean
 ): ReadiumAudioOpenResult = withContext(Dispatchers.Main.immediate) {
     val player = ExoPlayer.Builder(application)
-        .setAudioAttributes(audiobookMedia3AudioAttributes(), pauseForAudioInterruptions)
+        .setRenderersFactory(DefaultRenderersFactory(application))
+        .setAudioAttributes(
+            audiobookMedia3AudioAttributes(isDolbyContent = isDolbyContent),
+            pauseForAudioInterruptions
+        )
         .setHandleAudioBecomingNoisy(true)
         .setSeekBackIncrementMs(AUDIO_SEEK_BACK_INCREMENT_MS)
         .setSeekForwardIncrementMs(AUDIO_SEEK_FORWARD_INCREMENT_MS)
@@ -874,16 +923,32 @@ private suspend fun prepareDirectMedia3Audio(
     headersProvider: suspend (AbsoluteUrl) -> Map<String, String>,
     recoverAuthentication: suspend () -> Boolean
 ): ReadiumAudioOpenResult = withContext(Dispatchers.Main.immediate) {
+    val dolbyFormat = resolveBookDolbyContentFormat(book, activeMimeType = mimeType)
+    val effectiveMimeType = if (
+        mimeType == MimeTypes.AUDIO_E_AC3 &&
+        dolbyFormat == DolbyContentFormat.DOLBY_ATMOS
+    ) {
+        MimeTypes.AUDIO_E_AC3_JOC
+    } else {
+        mimeType
+    }
     val player = ExoPlayer.Builder(application)
-        .setAudioAttributes(audiobookMedia3AudioAttributes(), pauseForAudioInterruptions)
+        .setRenderersFactory(DefaultRenderersFactory(application))
+        .setAudioAttributes(
+            audiobookMedia3AudioAttributes(isDolbyContent = dolbyFormat != DolbyContentFormat.NONE),
+            pauseForAudioInterruptions
+        )
         .setHandleAudioBecomingNoisy(true)
         .setSeekBackIncrementMs(AUDIO_SEEK_BACK_INCREMENT_MS)
         .setSeekForwardIncrementMs(AUDIO_SEEK_FORWARD_INCREMENT_MS)
         .setMediaSourceFactory(
             DefaultMediaSourceFactory(application).setDataSourceFactory(
-                AuthenticatedMedia3HttpDataSourceFactory(
-                    headersProvider = headersProvider,
-                    recoverAuthentication = recoverAuthentication
+                DefaultDataSource.Factory(
+                    application,
+                    AuthenticatedMedia3HttpDataSourceFactory(
+                        headersProvider = headersProvider,
+                        recoverAuthentication = recoverAuthentication
+                    )
                 )
             )
         )
@@ -897,10 +962,26 @@ private suspend fun prepareDirectMedia3Audio(
             androidAutoCoverUri(application.packageName, book.id, book.libraryId)
         )
     }
+    if (dolbyFormat != DolbyContentFormat.NONE) {
+        val extras = Bundle()
+        applyDolbyBrowseIndicatorExtras(extras, application.packageName, dolbyFormat)
+        applyDolbyPlaybackMetadataExtras(extras, application.packageName, dolbyFormat)
+        metadataBuilder.setExtras(extras)
+    }
+    val resolvedUri = if (
+        !streamUrl.startsWith("http://", ignoreCase = true) &&
+        !streamUrl.startsWith("https://", ignoreCase = true) &&
+        !streamUrl.isContentLocator() &&
+        File(streamUrl).isFile
+    ) {
+        Uri.fromFile(File(streamUrl))
+    } else {
+        Uri.parse(streamUrl)
+    }
     val mediaItem = MediaItem.Builder()
         .setMediaId(book.fileId ?: book.id)
-        .setUri(streamUrl)
-        .setMimeType(mimeType)
+        .setUri(resolvedUri)
+        .setMimeType(effectiveMimeType)
         .setMediaMetadata(metadataBuilder.build())
         .build()
     player.setMediaItem(mediaItem)
@@ -1005,7 +1086,7 @@ internal data class AudioPreparingSession(
 )
 
 internal fun readiumAudioMediaType(filenameOrFormat: String): MediaType? {
-    val normalized = filenameOrFormat.trim().lowercase()
+    val normalized = filenameOrFormat.trim().lowercase().substringBefore(';')
     val extension = normalized.substringAfterLast('.').substringAfterLast('/')
     return when (extension) {
         "m4a", "m4b", "mp4" -> MediaType.MP4
@@ -1018,13 +1099,18 @@ internal fun readiumAudioMediaType(filenameOrFormat: String): MediaType? {
         "wav" -> MediaType.WAV
         "webm" -> MediaType.WEBM_AUDIO
         "x-m4b" -> MediaType.MP4
+        "eac3-joc", "ec3-joc", "e-ac-3-joc", "e-ac3-joc" -> MediaType.of(MimeTypes.AUDIO_E_AC3_JOC)
+        "eac3", "ec3", "e-ac-3", "e-ac3", "ec-3", "x-eac3", "ddp" -> MediaType.of(MimeTypes.AUDIO_E_AC3)
+        "ac3", "ac-3", "x-ac3" -> MediaType.of(MimeTypes.AUDIO_AC3)
         else -> null
     }
 }
 
 internal fun media3AudioMimeType(filenameOrFormat: String): String? {
     val normalized = filenameOrFormat.trim().lowercase()
-    val extension = normalized.substringAfterLast('.').substringAfterLast('/')
+    val withoutQuery = normalized.substringBefore('?').substringBefore('#')
+    val baseType = withoutQuery.substringBefore(';').trim()
+    val extension = baseType.substringAfterLast('.').substringAfterLast('/')
     return when (extension) {
         "m4a", "m4b", "mp4", "x-m4b" -> MimeTypes.AUDIO_MP4
         "mp3", "mpeg" -> MimeTypes.AUDIO_MPEG
@@ -1035,6 +1121,14 @@ internal fun media3AudioMimeType(filenameOrFormat: String): String? {
         "opus" -> MimeTypes.AUDIO_OPUS
         "wav" -> MimeTypes.AUDIO_WAV
         "webm" -> MimeTypes.AUDIO_WEBM
+        "eac3-joc", "ec3-joc", "e-ac-3-joc", "e-ac3-joc", "atmos" -> MimeTypes.AUDIO_E_AC3_JOC
+        "eac3", "ec3", "e-ac-3", "e-ac3", "ec-3", "x-eac3", "ddp" ->
+            if (detectDolbyContentFormat(normalized) == DolbyContentFormat.DOLBY_ATMOS) {
+                MimeTypes.AUDIO_E_AC3_JOC
+            } else {
+                MimeTypes.AUDIO_E_AC3
+            }
+        "ac3", "ac-3", "x-ac3" -> MimeTypes.AUDIO_AC3
         else -> null
     }
 }
@@ -1286,6 +1380,7 @@ class ReadiumAudioPlaybackService : MediaLibraryService() {
     private fun ensureLibrarySession(): MediaLibrarySession {
         mediaLibrarySession?.let { return it }
         val fallbackPlayer = idlePlayer ?: ExoPlayer.Builder(applicationContext)
+            .setRenderersFactory(DefaultRenderersFactory(applicationContext))
             .setAudioAttributes(audiobookMedia3AudioAttributes(), true)
             .setHandleAudioBecomingNoisy(true)
             .setSeekBackIncrementMs(AUDIO_SEEK_BACK_INCREMENT_MS)
@@ -1372,6 +1467,14 @@ class ReadiumAudioPlaybackService : MediaLibraryService() {
                     ) {
                         librarySessionPlayer?.notifyTimelineAndMetadataChanged()
                         refreshAndroidAutoCustomLayout(engine.player.playbackParameters.speed)
+                    }
+
+                    override fun onTracksChanged(tracks: androidx.media3.common.Tracks) {
+                        applyAudiobookAudioFocusPolicy(
+                            engine.player,
+                            AppPreferencesStore(applicationContext).read().pauseAudiobookForAudioInterruptions
+                        )
+                        librarySessionPlayer?.notifyMetadataAndPositionChanged()
                     }
                 })
                 librarySessionPlayer = wrappedPlayer
@@ -1880,7 +1983,11 @@ class ReadiumAudioPlaybackController internal constructor(
             resetPreparationIfCurrent(generation)
             throw error
         }
-        val useSingleFileEngine = shouldUseSingleFileAudioEngine(file?.isFile == true, audioFiles.size)
+        val useSingleFileEngine = shouldUseSingleFileAudioEngine(
+            hasLocalFile = file?.isFile == true,
+            audioFilesCount = audioFiles.size,
+            formatOrFilename = file?.name ?: book.format ?: book.filename
+        )
         val preparedAudioFiles = if (useSingleFileEngine) {
             emptyList()
         } else {
@@ -1954,7 +2061,7 @@ class ReadiumAudioPlaybackController internal constructor(
                     openDirectMedia3Audio(
                         application = application,
                         book = book,
-                        streamUrl = streamUrl,
+                        streamUrl = streamUrl ?: file?.takeIf { it.isFile }?.absolutePath,
                         initialPositionMs = initialPositionMs,
                         audioFiles = preparedAudioFiles,
                         pauseForAudioInterruptions = pauseForAudioInterruptions,

@@ -1035,7 +1035,8 @@ private val EPUB_FAMILY_FORMATS = setOf("epub", "kepub")
 private val PDF_FAMILY_FORMATS = setOf("pdf")
 private val COMIC_FAMILY_FORMATS = setOf("cbz", "cbr", "cb7")
 private val AUDIO_FAMILY_FORMATS = setOf(
-    "mp3", "mpeg", "m4a", "m4b", "mp4", "x-m4b", "aac", "aif", "aiff", "flac", "ogg", "oga", "opus", "wav", "webm"
+    "mp3", "mpeg", "m4a", "m4b", "mp4", "x-m4b", "aac", "ac3", "ac-3", "aif", "aiff",
+    "eac3", "e-ac-3", "e-ac3", "eac3-joc", "ec3", "ec-3", "flac", "ogg", "oga", "opus", "wav", "webm"
 )
 
 private fun formatFamilyKey(book: BookSummary): Int? {

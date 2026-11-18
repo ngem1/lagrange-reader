@@ -878,7 +878,8 @@ internal fun buildAndroidAutoChapterSpecs(
             isDownloaded = book.isDownloaded,
             bookId = book.id,
             libraryId = book.libraryId,
-            durationMs = scaledChapterDurationMs
+            durationMs = scaledChapterDurationMs,
+            dolbyContentFormat = resolveBookDolbyContentFormat(book)
         )
     }
 }
@@ -1098,6 +1099,10 @@ internal fun AndroidAutoNodeSpec.toMediaItem(packageName: String): MediaItem {
         playableContentStyle.toMediaConstantsValue()?.let { style ->
             putInt(MediaConstants.EXTRAS_KEY_CONTENT_STYLE_PLAYABLE, style)
         }
+        applyDolbyBrowseIndicatorExtras(this, packageName, dolbyContentFormat)
+        if (isPlayable) {
+            applyDolbyPlaybackMetadataExtras(this, packageName, dolbyContentFormat)
+        }
     }
 
     val metadataBuilder = MediaMetadata.Builder()
@@ -1150,7 +1155,10 @@ internal data class AndroidAutoCatalogSnapshot(
 internal fun String.sanitizeAudiobookTitle(): String {
     val cleaned = this.trim()
     return if (cleaned.contains(".")) {
-        cleaned.replace(Regex("\\.(m4b|m4a|mp3|flac|aac|ogg|wav|wma)$", RegexOption.IGNORE_CASE), "").trim()
+        cleaned.replace(
+            Regex("\\.(m4b|m4a|mp3|flac|aac|ogg|wav|wma|eac3|ec3|ac3)$", RegexOption.IGNORE_CASE),
+            ""
+        ).trim()
     } else {
         cleaned
     }
@@ -1512,11 +1520,20 @@ internal class AndroidAutoCatalogBridge private constructor(
                 detail = detail,
                 serverUrl = snapshot.serverUrl
             )
+            val dolbyCapabilities = detectDolbyAudioCapabilities(application)
             val onlineAudioFiles = detail?.availableFiles?.let { options ->
-                AudiobookTimeline.selectedPlaybackAudioFiles(options, targetBook.fileId)
+                AudiobookTimeline.selectedPlaybackAudioFiles(
+                    options = options,
+                    selectedFileId = targetBook.fileId,
+                    capabilities = dolbyCapabilities
+                )
             }.orEmpty()
             val localAudioFiles = detail?.availableFiles?.let { options ->
-                AudiobookTimeline.selectedLocalPlaybackAudioFiles(options, targetBook.fileId)
+                AudiobookTimeline.selectedLocalPlaybackAudioFiles(
+                    options = options,
+                    selectedFileId = targetBook.fileId,
+                    capabilities = dolbyCapabilities
+                )
             }.orEmpty()
 
             val totalDurationMs = detail
@@ -2496,6 +2513,28 @@ internal class LagrangeLibrarySessionPlayer(
         if (currentDuration != C.TIME_UNSET && currentDuration > 0L) {
             builder.setDurationMs(currentDuration)
         }
+        val active = sessionProvider?.invoke()
+        val dolbyFormat = resolvePlayerDolbyContentFormat(
+            player = wrappedPlayer,
+            book = active?.activeBookSummary(),
+            audioFiles = active?.audioFiles.orEmpty()
+        )
+        if (dolbyFormat != DolbyContentFormat.NONE) {
+            val pkg = contextProvider?.invoke()?.packageName
+                ?: base.artworkUri?.authority?.removeSuffix(ANDROID_AUTO_COVER_AUTHORITY_SUFFIX)
+                ?: fallback?.artworkUri?.authority?.removeSuffix(ANDROID_AUTO_COVER_AUTHORITY_SUFFIX)
+            if (!pkg.isNullOrBlank()) {
+                val mergedExtras = Bundle().apply {
+                    fallback?.extras?.let(::putAll)
+                    base.extras?.let(::putAll)
+                    applyDolbyBrowseIndicatorExtras(this, pkg, dolbyFormat)
+                    applyDolbyPlaybackMetadataExtras(this, pkg, dolbyFormat)
+                }
+                builder.setExtras(mergedExtras)
+            }
+        } else if (base.extras == null && fallback?.extras != null) {
+            builder.setExtras(fallback.extras)
+        }
         return builder.build()
     }
 
@@ -3007,10 +3046,22 @@ internal fun buildActiveSessionFallbackMediaMetadata(
 ): androidx.media3.common.MediaMetadata? {
     val session = current ?: return null
     val book = session.activeBookSummary()
+    val dolbyFormat = resolvePlayerDolbyContentFormat(
+        player = session.player,
+        book = book,
+        audioFiles = session.audioFiles
+    )
     val builder = androidx.media3.common.MediaMetadata.Builder()
         .setTitle(book.title.sanitizeAudiobookTitle())
         .setArtist(book.author)
         .setAlbumTitle((book.seriesName ?: book.title).sanitizeAudiobookTitle())
+    if (dolbyFormat != DolbyContentFormat.NONE && packageName.isNotBlank()) {
+        val extras = Bundle().apply {
+            applyDolbyBrowseIndicatorExtras(this, packageName, dolbyFormat)
+            applyDolbyPlaybackMetadataExtras(this, packageName, dolbyFormat)
+        }
+        builder.setExtras(extras)
+    }
     if (book.id.isNotBlank()) {
         builder.setArtworkUri(androidAutoCoverUri(packageName, book.id, book.libraryId))
     }
@@ -3032,6 +3083,16 @@ internal fun grantBookCoverPermissions(
         grantAndroidAutoCoverUriPermission(
             service,
             "com.google.android.projection.gearhead",
+            coverUri
+        )
+        grantAndroidAutoCoverUriPermission(
+            service,
+            "com.android.car.media",
+            coverUri
+        )
+        grantAndroidAutoCoverUriPermission(
+            service,
+            "com.android.car.carlauncher",
             coverUri
         )
         grantAndroidAutoCoverUriPermission(

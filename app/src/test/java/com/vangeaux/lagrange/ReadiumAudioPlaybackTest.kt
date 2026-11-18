@@ -439,6 +439,10 @@ class ReadiumAudioPlaybackTest {
         assertEquals(MediaType.OPUS, readiumAudioMediaType("book.opus"))
         assertEquals(MediaType.WAV, readiumAudioMediaType("book.wav"))
         assertEquals(MediaType.WEBM_AUDIO, readiumAudioMediaType("book.webm"))
+        assertEquals(MediaType.parse("audio/eac3"), readiumAudioMediaType("book.eac3"))
+        assertEquals(MediaType.parse("audio/eac3"), readiumAudioMediaType("book.ec3"))
+        assertEquals(MediaType.parse("audio/eac3-joc"), readiumAudioMediaType("audio/eac3-joc"))
+        assertEquals(MediaType.parse("audio/ac3"), readiumAudioMediaType("book.ac3"))
     }
 
     @Test
@@ -457,7 +461,30 @@ class ReadiumAudioPlaybackTest {
         assertEquals(MimeTypes.AUDIO_FLAC, media3AudioMimeType("book.flac"))
         assertEquals(MimeTypes.AUDIO_OGG, media3AudioMimeType("book.ogg"))
         assertEquals(MimeTypes.AUDIO_OPUS, media3AudioMimeType("book.opus"))
+        assertEquals(MimeTypes.AUDIO_E_AC3, media3AudioMimeType("book.eac3"))
+        assertEquals(MimeTypes.AUDIO_E_AC3, media3AudioMimeType("book.ec3"))
+        assertEquals(MimeTypes.AUDIO_E_AC3, media3AudioMimeType("audio/eac3"))
+        assertEquals(MimeTypes.AUDIO_E_AC3_JOC, media3AudioMimeType("audio/eac3-joc"))
+        assertEquals(MimeTypes.AUDIO_E_AC3_JOC, media3AudioMimeType("eac3-joc"))
+        assertEquals(MimeTypes.AUDIO_AC3, media3AudioMimeType("book.ac3"))
+        assertEquals(MimeTypes.AUDIO_AC3, media3AudioMimeType("audio/ac3"))
         assertNull(media3AudioMimeType("book.epub"))
+    }
+
+    @Test
+    fun dolbyAudioAttributesAndDirectMedia3SelectionFollowAutomotiveGuidelines() {
+        val speechAttributes = audiobookMedia3AudioAttributes(isDolbyContent = false)
+        assertEquals(C.USAGE_MEDIA, speechAttributes.usage)
+        assertEquals(C.AUDIO_CONTENT_TYPE_SPEECH, speechAttributes.contentType)
+
+        val dolbyAttributes = audiobookMedia3AudioAttributes(isDolbyContent = true)
+        assertEquals(C.USAGE_MEDIA, dolbyAttributes.usage)
+        assertEquals(C.AUDIO_CONTENT_TYPE_MUSIC, dolbyAttributes.contentType)
+
+        assertTrue(shouldUseSingleFileAudioEngine(hasLocalFile = true, audioFilesCount = 0, formatOrFilename = "book.m4b"))
+        assertFalse(shouldUseSingleFileAudioEngine(hasLocalFile = true, audioFilesCount = 0, formatOrFilename = "book.eac3"))
+        assertFalse(shouldUseSingleFileAudioEngine(hasLocalFile = true, audioFilesCount = 0, formatOrFilename = "audio/eac3-joc"))
+        assertFalse(shouldUseSingleFileAudioEngine(hasLocalFile = true, audioFilesCount = 0, formatOrFilename = "book.ac3"))
     }
 
     @Test

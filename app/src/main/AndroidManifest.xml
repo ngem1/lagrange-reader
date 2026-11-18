@@ -13,6 +13,19 @@
         android:name="android.permission.WRITE_EXTERNAL_STORAGE"
         android:maxSdkVersion="28" />
 
+    <uses-feature
+        android:name="android.hardware.type.automotive"
+        android:required="true" />
+    <uses-feature
+        android:name="android.hardware.wifi"
+        android:required="false" />
+    <uses-feature
+        android:name="android.hardware.screen.portrait"
+        android:required="false" />
+    <uses-feature
+        android:name="android.hardware.screen.landscape"
+        android:required="false" />
+
     <queries>
         <intent>
             <action android:name="android.intent.action.TTS_SERVICE" />
@@ -22,6 +35,7 @@
     <application
         android:name=".BookOrbitApplication"
         android:allowBackup="true"
+        android:appCategory="audio"
         android:dataExtractionRules="@xml/data_extraction_rules"
         android:fullBackupContent="@xml/backup_rules"
         android:icon="@mipmap/ic_launcher"
@@ -34,7 +48,7 @@
         android:usesCleartextTraffic="true">
 
         <meta-data
-            android:name="com.google.android.gms.car.application"
+            android:name="com.android.automotive"
             android:resource="@xml/automotive_app_desc" />
 
         <activity
@@ -94,8 +108,8 @@
             android:configChanges="orientation|screenSize|screenLayout"
             android:exported="true">
             <intent-filter>
-                <action android:name="android.intent.action.MAIN" />
-                <category android:name="android.intent.category.LAUNCHER" />
+                <action android:name="android.intent.action.APPLICATION_PREFERENCES" />
+                <category android:name="android.intent.category.DEFAULT" />
             </intent-filter>
 
         </activity>

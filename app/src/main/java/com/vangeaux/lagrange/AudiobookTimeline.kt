@@ -23,9 +23,33 @@ object AudiobookTimeline {
 
     fun selectedPlaybackAudioFiles(
         options: List<BookFileOption>,
-        selectedFileId: String?
+        selectedFileId: String?,
+        capabilities: DolbyAudioCapabilities? = null
     ): List<BookFileOption> {
-        val candidates = playbackAudioFiles(options)
+        val rawCandidates = playbackAudioFiles(options)
+        val candidates = if (capabilities != null) {
+            val filtered = rawCandidates.filter { option ->
+                if (
+                    capabilities.isAutomotiveOs &&
+                    isAc4ImsAsset(option.format, option.filename, option.book.title)
+                ) {
+                    return@filter false
+                }
+                val dolbyFormat = detectDolbyContentFormat(
+                    format = option.format,
+                    filename = option.filename ?: option.book.filename,
+                    title = option.book.title
+                )
+                capabilities.supportsContentFormat(
+                    format = dolbyFormat,
+                    rawFormatOrMime = option.format ?: option.filename,
+                    titleOrFilename = option.filename ?: option.book.title
+                )
+            }
+            filtered.ifEmpty { rawCandidates }
+        } else {
+            rawCandidates
+        }
         val selectedFormat = candidates
             .firstOrNull { it.fileId == selectedFileId }
             ?.let(::availableFileGroupFormat)
@@ -33,13 +57,48 @@ object AudiobookTimeline {
             return candidates.filter { availableFileGroupFormat(it) == selectedFormat }
         }
         val formats = candidates.map(::availableFileGroupFormat).distinct()
-        return candidates.takeIf { formats.size == 1 }.orEmpty()
+        if (formats.size == 1) {
+            return candidates
+        }
+        if (capabilities != null && formats.size > 1) {
+            val atmosGroup = formats.firstOrNull { group ->
+                candidates
+                    .filter { availableFileGroupFormat(it) == group }
+                    .any { option ->
+                        detectDolbyContentFormat(
+                            format = option.format,
+                            filename = option.filename ?: option.book.filename,
+                            title = option.book.title
+                        ) == DolbyContentFormat.DOLBY_ATMOS
+                    }
+            }
+            val preferredGroup = atmosGroup ?: formats.firstOrNull { group ->
+                candidates
+                    .filter { availableFileGroupFormat(it) == group }
+                    .any { option ->
+                        detectDolbyContentFormat(
+                            format = option.format,
+                            filename = option.filename ?: option.book.filename,
+                            title = option.book.title
+                        ) == DolbyContentFormat.DOLBY_AUDIO
+                    }
+            }
+            if (preferredGroup != null) {
+                return candidates.filter { availableFileGroupFormat(it) == preferredGroup }
+            }
+        }
+        return emptyList()
     }
 
     fun selectedLocalPlaybackAudioFiles(
         options: List<BookFileOption>,
-        selectedFileId: String?
-    ): List<BookFileOption> = selectedPlaybackAudioFiles(options, selectedFileId).map { option ->
+        selectedFileId: String?,
+        capabilities: DolbyAudioCapabilities? = null
+    ): List<BookFileOption> = selectedPlaybackAudioFiles(
+        options = options,
+        selectedFileId = selectedFileId,
+        capabilities = capabilities
+    ).map { option ->
         option.copy(book = option.book.copy(streamUrl = null))
     }
 

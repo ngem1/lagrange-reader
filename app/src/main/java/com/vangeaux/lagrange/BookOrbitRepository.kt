@@ -6406,7 +6406,9 @@ private fun audiobookFileExtension(book: BookSummary): String? {
     }
     return suffixes.firstNotNullOfOrNull { suffix ->
         when (suffix) {
-            "m4a", "m4b", "mp4", "aac", "aif", "aiff", "flac", "ogg", "oga", "opus", "wav", "webm" -> suffix
+            "m4a", "m4b", "mp4", "aac", "ac3", "aif", "aiff", "eac3", "ec3", "flac", "ogg", "oga", "opus", "wav", "webm" -> suffix
+            "e-ac-3", "e-ac3", "eac3-joc", "ec-3" -> "eac3"
+            "ac-3" -> "ac3"
             "mp3", "mpeg" -> "mp3"
             "x-m4b" -> "m4b"
             else -> null

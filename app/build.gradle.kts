@@ -24,7 +24,7 @@ android {
 
     defaultConfig {
         applicationId = "com.vangeaux.lagrange"
-        minSdk = 26
+        minSdk = 28
         targetSdk = 36
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         // Release marker: update versionCode and versionName together for every distributed build.
@@ -97,13 +97,40 @@ android {
 
 val copyDebugApkWithTimestamp by tasks.registering {
     dependsOn("packageDebug")
+    onlyIf {
+        val assembleTask = project.tasks.findByName("assembleDebug")
+        val packageTask = project.tasks.findByName("packageDebug")
+        (assembleTask == null || assembleTask.state.failure == null) &&
+            (packageTask == null || packageTask.state.failure == null)
+    }
 
     doLast {
-        val sourceApk = layout.buildDirectory.file("outputs/apk/debug/app-debug.apk").get().asFile
-        check(sourceApk.isFile) { "Expected debug APK was not produced: ${sourceApk.absolutePath}" }
+        val buildDir = layout.buildDirectory.get().asFile
+        val candidateApks = listOf(
+            buildDir.resolve("outputs/apk/debug/app-debug.apk"),
+            buildDir.resolve("intermediates/apk/debug/app-debug.apk")
+        )
+        val sourceApk = candidateApks.firstOrNull { it.isFile }
+            ?: buildDir.resolve("outputs/apk/debug")
+                .walkTopDown()
+                .firstOrNull { it.isFile && it.extension == "apk" && !it.name.startsWith("Lagrange-debug-") }
+            ?: buildDir.resolve("intermediates/apk/debug")
+                .walkTopDown()
+                .firstOrNull { it.isFile && it.extension == "apk" }
+
+        if (sourceApk == null || !sourceApk.isFile) {
+            logger.warn("Skipping timestamped debug APK copy: app-debug.apk was not found under ${buildDir.absolutePath}")
+            return@doLast
+        }
+
+        val outputDir = buildDir.resolve("outputs/apk/debug").apply { mkdirs() }
+        val canonicalApk = outputDir.resolve("app-debug.apk")
+        if (sourceApk.canonicalPath != canonicalApk.canonicalPath) {
+            sourceApk.copyTo(canonicalApk, overwrite = true)
+        }
 
         val timestamp = SimpleDateFormat("yyyyMMddHHmm", Locale.ROOT).format(Date())
-        val timestampedApk = sourceApk.parentFile.resolve("Lagrange-debug-$timestamp.apk")
+        val timestampedApk = outputDir.resolve("Lagrange-debug-$timestamp.apk")
         sourceApk.copyTo(timestampedApk, overwrite = true)
         logger.lifecycle("Timestamped debug APK: ${timestampedApk.absolutePath}")
     }

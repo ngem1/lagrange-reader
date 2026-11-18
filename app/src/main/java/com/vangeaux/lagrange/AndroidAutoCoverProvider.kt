@@ -23,6 +23,8 @@ private const val MAX_CACHED_AUTO_COVERS = 120
 
 private val KNOWN_AUTO_CONSUMER_PACKAGES = listOf(
     "com.google.android.projection.gearhead",
+    "com.android.car.media",
+    "com.android.car.carlauncher",
     "com.android.systemui",
     "com.google.android.carassistant",
     "com.google.android.googlequicksearchbox"

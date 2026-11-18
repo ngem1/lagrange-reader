@@ -546,4 +546,140 @@ class AndroidAutoMediaLibraryTest {
         assertEquals(0, timelineChangedCount)
         assertTrue(metadataChangedCount > 0)
     }
+
+    @Test
+    fun detectDolbyContentFormatAndCapabilitiesHandleEac3AtmosAndRejectAc4ImsOnAutomotiveOs() {
+        assertEquals(
+            DolbyContentFormat.DOLBY_ATMOS,
+            detectDolbyContentFormat(format = "audio/eac3-joc", filename = "chapter1.m4b")
+        )
+        assertEquals(
+            DolbyContentFormat.DOLBY_ATMOS,
+            detectDolbyContentFormat(format = "audio/mp4", filename = "Dune_Dolby_Atmos.m4b")
+        )
+        assertEquals(
+            DolbyContentFormat.DOLBY_AUDIO,
+            detectDolbyContentFormat(format = "audio/eac3", filename = "chapter1.eac3")
+        )
+        assertEquals(
+            DolbyContentFormat.DOLBY_AUDIO,
+            detectDolbyContentFormat(format = "audio/ac3", filename = "chapter1.ac3")
+        )
+        assertEquals(
+            DolbyContentFormat.NONE,
+            detectDolbyContentFormat(format = "audio/mp4", filename = "chapter1.m4b")
+        )
+
+        val aaosCaps = DolbyAudioCapabilities(
+            supportsEac3Joc = true,
+            supportsEac3 = true,
+            supportsAc3 = true,
+            supportsAc4Level4 = true,
+            isAutomotiveOs = true
+        )
+        assertTrue(
+            aaosCaps.supportsContentFormat(
+                format = DolbyContentFormat.DOLBY_ATMOS,
+                rawFormatOrMime = "audio/eac3-joc",
+                titleOrFilename = "chapter1.eac3"
+            )
+        )
+        // Per Dolby AAOS guide Section 3.4: AC-4 IMS content must not be played on AAOS devices.
+        assertFalse(
+            aaosCaps.supportsContentFormat(
+                format = DolbyContentFormat.DOLBY_ATMOS,
+                rawFormatOrMime = "audio/ac4",
+                titleOrFilename = "track_ac4_ims.mp4"
+            )
+        )
+
+        // Verify AC-4 sync header helper produces the 7-byte header starting with 0xAC 0x40 0xFF 0xFF
+        val ac4Header = buildAc4SyncHeaderNoCrc(1024)
+        assertEquals(7, ac4Header.size)
+        assertEquals(0xAC.toByte(), ac4Header[0])
+        assertEquals(0x40.toByte(), ac4Header[1])
+        assertEquals(0xFF.toByte(), ac4Header[2])
+        assertEquals(0xFF.toByte(), ac4Header[3])
+        assertEquals(0x04.toByte(), ac4Header[5])
+        assertEquals(0x00.toByte(), ac4Header[6])
+    }
+
+    @Test
+    fun bookToAndroidAutoNodeSpecPopulatesDolbyContentFormatAndSanitizesDolbyExtensions() {
+        val atmosBook = sampleAudioBook(
+            id = "atmos-book",
+            title = "Project Hail Mary (Dolby Atmos).eac3"
+        ).copy(
+            format = "audio/eac3-joc",
+            filename = "Project Hail Mary.eac3"
+        )
+        val atmosSpec = bookToAndroidAutoNodeSpec(atmosBook)
+        assertEquals("Project Hail Mary (Dolby Atmos)", atmosSpec.title)
+        assertEquals(DolbyContentFormat.DOLBY_ATMOS, atmosSpec.dolbyContentFormat)
+
+        val dolbyAudioBook = sampleAudioBook(
+            id = "ddp-book",
+            title = "The Martian.ec3"
+        ).copy(
+            format = "audio/eac3",
+            filename = "The Martian.ec3"
+        )
+        val dolbyAudioSpec = bookToAndroidAutoNodeSpec(dolbyAudioBook)
+        assertEquals("The Martian", dolbyAudioSpec.title)
+        assertEquals(DolbyContentFormat.DOLBY_AUDIO, dolbyAudioSpec.dolbyContentFormat)
+    }
+
+    @Test
+    fun selectedPlaybackAudioFilesPrefersSupportedDolbyAtmosEac3AndFiltersOutAc4ImsOnAaos() {
+        val baseBook = sampleAudioBook(id = "book-1", title = "Multi-Rendition Audiobook")
+        val aacOption = BookFileOption(
+            book = baseBook.copy(fileId = "f-aac", format = "m4b", filename = "book.m4b"),
+            filename = "book.m4b",
+            format = "m4b",
+            mediaKind = MediaKind.AUDIO,
+            role = "content"
+        )
+        val eac3AtmosOption = BookFileOption(
+            book = baseBook.copy(fileId = "f-atmos", format = "eac3-joc", filename = "book_atmos.eac3"),
+            filename = "book_atmos.eac3",
+            format = "eac3-joc",
+            mediaKind = MediaKind.AUDIO,
+            role = "content"
+        )
+        val ac4ImsOption = BookFileOption(
+            book = baseBook.copy(fileId = "f-ims", format = "ac4-ims", filename = "book_ac4_ims.mp4"),
+            filename = "book_ac4_ims.mp4",
+            format = "ac4-ims",
+            mediaKind = MediaKind.AUDIO,
+            role = "content"
+        )
+
+        val aaosWithAtmos = DolbyAudioCapabilities(
+            supportsEac3Joc = true,
+            supportsEac3 = true,
+            supportsAc3 = true,
+            supportsAc4Level4 = false,
+            isAutomotiveOs = true
+        )
+        val selectedWithAtmos = AudiobookTimeline.selectedPlaybackAudioFiles(
+            options = listOf(aacOption, eac3AtmosOption, ac4ImsOption),
+            selectedFileId = null,
+            capabilities = aaosWithAtmos
+        )
+        assertEquals(listOf("f-atmos"), selectedWithAtmos.mapNotNull { it.fileId })
+
+        val aaosWithoutDolby = DolbyAudioCapabilities(
+            supportsEac3Joc = false,
+            supportsEac3 = false,
+            supportsAc3 = false,
+            supportsAc4Level4 = false,
+            isAutomotiveOs = true
+        )
+        val selectedWithoutDolby = AudiobookTimeline.selectedPlaybackAudioFiles(
+            options = listOf(aacOption, eac3AtmosOption, ac4ImsOption),
+            selectedFileId = null,
+            capabilities = aaosWithoutDolby
+        )
+        assertEquals(listOf("f-aac"), selectedWithoutDolby.mapNotNull { it.fileId })
+    }
 }

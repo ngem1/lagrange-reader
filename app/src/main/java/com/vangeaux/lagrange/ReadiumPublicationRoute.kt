@@ -25,7 +25,10 @@ internal fun readiumPublicationRoute(format: String?, title: String?): ReadiumPu
             ReadiumPublicationRoute.COMIC
         parts.any { it == "pdf" } -> ReadiumPublicationRoute.PDF
         token.contains("audio") || parts.any {
-            it in setOf("mp3", "mpeg", "m4a", "m4b", "mp4", "aac", "aif", "aiff", "flac", "ogg", "oga", "opus", "wav", "webm")
+            it in setOf(
+                "mp3", "mpeg", "m4a", "m4b", "mp4", "aac", "ac3", "aif", "aiff",
+                "eac3", "ec3", "flac", "ogg", "oga", "opus", "wav", "webm"
+            )
         } -> ReadiumPublicationRoute.AUDIO
         else -> ReadiumPublicationRoute.UNSUPPORTED
     }

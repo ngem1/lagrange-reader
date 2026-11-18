@@ -200,6 +200,8 @@ private fun komgaFormat(format: String?, filename: String?): String? {
         "m4b" -> return "m4b"
         "m4a" -> return "m4a"
         "mp3" -> return "mp3"
+        "eac3", "ec3" -> return "eac3"
+        "ac3" -> return "ac3"
         "flac" -> return "flac"
         "opus" -> return "opus"
         "ogg" -> return "ogg"
@@ -216,6 +218,8 @@ private fun komgaFormat(format: String?, filename: String?): String? {
         value.contains("rar") -> "cbr"
         value.contains("m4b") -> "m4b"
         value.contains("m4a") -> "m4a"
+        value.contains("eac3") || value.contains("e-ac-3") || value.contains("e-ac3") || value.contains("ec3") || value.contains("ec-3") -> "eac3"
+        value.contains("ac3") || value.contains("ac-3") -> "ac3"
         value.contains("mp3") || value.contains("mpeg") -> "mp3"
         value.contains("flac") -> "flac"
         value.contains("opus") -> "opus"
@@ -1338,7 +1342,7 @@ private fun komgaMediaKind(format: String?, filename: String?): MediaKind {
         value.contains("epub") -> MediaKind.EPUB
         value == "pdf" -> MediaKind.PDF
         value in setOf("cbz", "cbr", "cb7") -> MediaKind.COMIC
-        value in setOf("mp3", "m4b", "m4a", "flac", "ogg", "opus", "wav") -> MediaKind.AUDIO
+        value in setOf("mp3", "m4b", "m4a", "eac3", "ec3", "ac3", "flac", "ogg", "opus", "wav") -> MediaKind.AUDIO
         else -> MediaKind.UNKNOWN
     }
 }

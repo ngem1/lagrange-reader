@@ -1705,6 +1705,8 @@ class DownloadStore private constructor(
             token.contains("pdf") -> "pdf"
             token.contains("m4b") -> "m4b"
             token.contains("m4a") -> "m4a"
+            token.contains("eac3") || token.contains("e-ac-3") || token.contains("e-ac3") || token.contains("ec3") || token.contains("ec-3") -> "eac3"
+            token.contains("ac3") || token.contains("ac-3") -> "ac3"
             token.contains("mp3") || token.contains("mpeg") -> "mp3"
             token.contains("ogg") -> "ogg"
             token.contains("opus") -> "opus"

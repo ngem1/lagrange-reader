@@ -123,6 +123,8 @@ internal fun kavitaFormat(rawFormat: String?, rawExtension: String?): String? {
         value.contains("cb7") || value.contains("7z") -> "cb7"
         value.contains("m4b") -> "m4b"
         value.contains("m4a") -> "m4a"
+        value.contains("eac3") || value.contains("e-ac-3") || value.contains("e-ac3") || value.contains("ec3") || value.contains("ec-3") -> "eac3"
+        value.contains("ac3") || value.contains("ac-3") -> "ac3"
         value.contains("mp3") || value.contains("mpeg") -> "mp3"
         value.contains("flac") -> "flac"
         value.contains("opus") -> "opus"
@@ -133,7 +135,7 @@ internal fun kavitaFormat(rawFormat: String?, rawExtension: String?): String? {
             ?.removePrefix(".")
             ?.lowercase(Locale.US)
             ?.takeIf {
-                it in setOf("epub", "pdf", "cbz", "cbr", "cb7", "m4b", "m4a", "mp3", "flac", "opus", "ogg", "wav")
+                it in setOf("epub", "pdf", "cbz", "cbr", "cb7", "m4b", "m4a", "mp3", "eac3", "ec3", "ac3", "flac", "opus", "ogg", "wav")
             }
     }
 }
@@ -145,7 +147,7 @@ internal fun kavitaMediaKind(format: String?): MediaKind = when (format) {
     "epub" -> MediaKind.EPUB
     "pdf" -> MediaKind.PDF
     "cbz", "cbr", "cb7" -> MediaKind.COMIC
-    "m4b", "m4a", "mp3", "flac", "opus", "ogg", "wav" -> MediaKind.AUDIO
+    "m4b", "m4a", "mp3", "eac3", "ec3", "ac3", "flac", "opus", "ogg", "wav" -> MediaKind.AUDIO
     else -> MediaKind.UNKNOWN
 }
 

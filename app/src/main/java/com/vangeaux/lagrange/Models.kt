@@ -14,7 +14,8 @@ enum class MediaKind {
 }
 
 private val AUDIO_FORMATS = setOf(
-    "aac", "aif", "aiff", "flac", "m4a", "m4b", "mp3", "mp4", "mpeg", "oga", "ogg", "opus", "wav", "webm", "x-m4b"
+    "aac", "ac3", "ac-3", "aif", "aiff", "eac3", "e-ac-3", "e-ac3", "eac3-joc", "ec3", "ec-3",
+    "flac", "m4a", "m4b", "mp3", "mp4", "mpeg", "oga", "ogg", "opus", "wav", "webm", "x-m4b"
 )
 
 internal fun normalizedAvailableFormats(formats: Iterable<Pair<String?, MediaKind>>): List<String> {
