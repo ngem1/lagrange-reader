@@ -117,7 +117,8 @@ internal data class AndroidAutoNodeSpec(
     val durationMs: Long? = null,
     @DrawableRes val iconResId: Int? = null,
     val browsableContentStyle: AndroidAutoContentStyle = AndroidAutoContentStyle.DEFAULT,
-    val playableContentStyle: AndroidAutoContentStyle = AndroidAutoContentStyle.DEFAULT
+    val playableContentStyle: AndroidAutoContentStyle = AndroidAutoContentStyle.DEFAULT,
+    val dolbyContentFormat: DolbyContentFormat = DolbyContentFormat.NONE
 )
 
 internal sealed interface AndroidAutoMediaId {
@@ -334,7 +335,8 @@ internal fun bookToAndroidAutoNodeSpec(
         completionState = resolveAndroidAutoCompletionState(book),
         isDownloaded = isDownloaded,
         bookId = book.id,
-        libraryId = book.libraryId
+        libraryId = book.libraryId,
+        dolbyContentFormat = resolveBookDolbyContentFormat(book)
     )
 }
 
